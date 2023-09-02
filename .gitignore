@@ -1,0 +1,4 @@
+Facial-Recognition/dataset/*.jpg
+Facial-Recognition/trainer/*.yml
+venv
+Audio-Generator/audios/*.mp3
