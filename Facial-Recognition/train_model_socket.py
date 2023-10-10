@@ -42,3 +42,4 @@ ws.on_message = handle
 
 while True:
     result = ws.recv()
+    print("After")
