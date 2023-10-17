@@ -5,13 +5,16 @@ import json
 import face_recognition
 import numpy as np
 import pickle
+import time
 import threading
 from websocket import create_connection
 
 class BellNotifier():
 
     def __init__(self, route):
+        print("Initing Bell notifier")
         self.bell_socket = create_connection(route)
+        print("Bell connected")
         self.notified = False
 
     def notify(self):
@@ -47,7 +50,7 @@ class FaceRecognitionTrainer():
 
     def __init__(self, route):
         self.face_training_socket = create_connection(route)
-        self.face_training_socket.on_message = self.handle_message
+        #self.face_training_socket.on_message = self.handle_message
 
     def process_base64_image(self, base64_string):
         binary_data = base64.b64decode(base64_string)
@@ -61,7 +64,7 @@ class FaceRecognitionTrainer():
         f.write(pickle.dumps(data))
         f.close()
     
-    def handle_message(self, ws, message):
+    def handle_message(self, message):
         data = json.loads(message)
 
         knownEncodings = []
@@ -86,15 +89,18 @@ class FaceRecognitionTrainer():
     def execute(self):
         while True:
             result = self.face_training_socket.recv()
+            self.handle_message(result)
 
-bell_notifier = BellNotifier("ws://localhost:3000/websocket/bell")
-#video_streamer = VideoStreamer("ws://localhost:3000/websocket/image-stream")
-#face_trainer = FaceRecognitionTrainer("ws://localhost:3000/websocket/face-trainer")
+socket_route = "ws://localhost:3000/websocket"
+
+bell_notifier = BellNotifier(socket_route)
+#video_streamer = VideoStreamer(socket_route)
+face_trainer = FaceRecognitionTrainer(socket_route)
 
 # threads principais
 
 # coloca o código de espera para receber fotos do servidor
-#threading.Thread(target=face_trainer.execute).start()
+threading.Thread(target=face_trainer.execute).start()
 
 while True:
 
