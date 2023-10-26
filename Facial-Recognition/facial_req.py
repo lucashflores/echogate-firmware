@@ -23,7 +23,7 @@ data = pickle.loads(open(encodingsP, "rb").read())
 # src = 0 : for the build in single web cam, could be your laptop webcam
 # src = 2 : I had to set it to 2 inorder to use the USB webcam attached to my laptop
 #vs = VideoStream(src=2,framerate=10).start()
-vs = VideoStream(src=0).start()
+vs = VideoStream(src=1).start()
 time.sleep(2.0)
 
 # inicia contador de fps

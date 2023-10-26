@@ -21,15 +21,16 @@ class BellNotifier():
         self.bell_socket.send(json.dumps({"event": "event", "data": str("Alguém tocou a campainha")}))
 
     def execute(self):
-        if keyboard.is_pressed('b'):
-            if not self.notified:
-                self.notified = True
-                self.notify()
-                return True
-        else:
-            self.notified = False
+        pass
+        # if keyboard.is_pressed('b'):
+        #     if not self.notified:
+        #         self.notified = True
+        #         self.notify()
+        #         return True
+        # else:
+        #     self.notified = False
 
-        return False
+        # return False
 
 class VideoStreamer():
     
@@ -50,6 +51,7 @@ class FaceRecognitionTrainer():
 
     def __init__(self, route):
         self.face_training_socket = create_connection(route)
+        self.face_training_socket.send(json.dumps({"event": "imageTrainerClient", "data": "Facial Trainer"}))
         #self.face_training_socket.on_message = self.handle_message
 
     def process_base64_image(self, base64_string):
@@ -58,11 +60,13 @@ class FaceRecognitionTrainer():
         image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
         return image
     
-    def write_face_data(self, data, knownEncodings, knownNames):
+    def write_face_data(self, knownEncodings, knownNames):
+        print("Generating encondings...")
         data = {"encodings": knownEncodings, "names": knownNames}
         f = open("encodings.pickle", "wb")
         f.write(pickle.dumps(data))
         f.close()
+        print("Completed successfully!")
     
     def handle_message(self, message):
         data = json.loads(message)
@@ -70,9 +74,13 @@ class FaceRecognitionTrainer():
         knownEncodings = []
         knownNames = []
 
+        print("Data received!")
+
+        data = data["users"]
+
         for person_data in data:
             person_name = person_data["name"]
-            images_base64 = person_data["images"]
+            images_base64 = person_data["pictures"]
             for image_base64 in images_base64:
                 image = self.process_base64_image(image_base64)
                 rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -82,7 +90,7 @@ class FaceRecognitionTrainer():
                     knownEncodings.append(encoding)
                     knownNames.append(person_name)
 
-        self.write_face_data(data)
+        self.write_face_data(knownEncodings, knownNames)
         
         
 
