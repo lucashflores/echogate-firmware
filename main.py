@@ -1,11 +1,10 @@
-import keyboard
 import cv2
 import base64
 import json
 import face_recognition
 import numpy as np
 import pickle
-import time
+import gpiozero
 import threading
 from websocket import create_connection
 
@@ -15,22 +14,22 @@ class BellNotifier():
         print("Initing Bell notifier")
         self.bell_socket = create_connection(route)
         print("Bell connected")
+        self.button = gpiozero.Button(17)
         self.notified = False
 
     def notify(self):
         self.bell_socket.send(json.dumps({"event": "event", "data": str("Alguém tocou a campainha")}))
 
     def execute(self):
-        pass
-        # if keyboard.is_pressed('b'):
-        #     if not self.notified:
-        #         self.notified = True
-        #         self.notify()
-        #         return True
-        # else:
-        #     self.notified = False
+        if self.button.is_pressed:
+            if not self.notified:
+                self.notified = True
+                self.notify()
+                return True
+        else:
+            self.notified = False
 
-        # return False
+        return False
 
 class VideoStreamer():
     
