@@ -7,6 +7,23 @@ import pickle
 import gpiozero
 import threading
 from websocket import create_connection
+import subprocess
+
+MEET_URL="http://jitsi.member.fsf.org/echogate-streaming3#config.prejoinPageEnabled=false"
+
+class AudioEmitter():
+
+    def __init__(self, route):
+        self.audio_emiiter_socket = create_connection(route)
+        self.audio_emiiter_socket.send(json.dumps({"event": "audioEmitterClient", "data": "Audio Emitter"}))
+
+class FaceRecognizer():
+
+    def __init__(self, route):
+        self.face_recognizer_socket = create_connection(route)
+    
+    def notify(self, name):
+        self.face_recognizer_socket.send(json.dumps({"event": "faceRecognized", "data": str(name)}))
 
 class BellNotifier():
 
@@ -18,7 +35,7 @@ class BellNotifier():
         self.notified = False
 
     def notify(self):
-        self.bell_socket.send(json.dumps({"event": "event", "data": str("Alguém tocou a campainha")}))
+        self.bell_socket.send(json.dumps({"event": "bellRing", "data": str("Alguém tocou a campainha")}))
 
     def execute(self):
         if self.button.is_pressed:
@@ -35,16 +52,11 @@ class VideoStreamer():
     
     def __init__(self, route):
         self.video_stream_socket = create_connection(route)
-        self.image = cv2.VideoCapture(0)
-
-    def send_image(self, image_as_text):
-        self.video_stream_socket.send(json.dumps({"event": "stream", "data": str(image_as_text)}))
 
     def execute(self):
-        ret, frame = self.image.read()
-        ret, buffer = cv2.imencode('.jpg', frame)
-        jpg_as_text = base64.b64encode(buffer)
-        self.send_image(jpg_as_text)
+        subprocess.Popen(["chromium-browser", "-kiosk", MEET_URL])
+        while True:
+            pass
 
 class FaceRecognitionTrainer():
 
@@ -101,13 +113,14 @@ class FaceRecognitionTrainer():
 socket_route = "ws://localhost:3000/websocket"
 
 bell_notifier = BellNotifier(socket_route)
-#video_streamer = VideoStreamer(socket_route)
+video_streamer = VideoStreamer(socket_route)
 face_trainer = FaceRecognitionTrainer(socket_route)
 
 # threads principais
 
 # coloca o código de espera para receber fotos do servidor
 threading.Thread(target=face_trainer.execute).start()
+threading.Thread(target=video_streamer.execute).start()
 
 while True:
 
