@@ -51,7 +51,7 @@ class BellNotifier():
 class VideoStreamer():
     
     def __init__(self, route):
-        self.video_stream_socket = create_connection(route)
+        pass
 
     def execute(self):
         subprocess.Popen(["chromium-browser", "-kiosk", MEET_URL])
@@ -112,14 +112,14 @@ class FaceRecognitionTrainer():
 
 socket_route = "ws://localhost:3000/websocket"
 
-bell_notifier = BellNotifier(socket_route)
+#bell_notifier = BellNotifier(socket_route)
 video_streamer = VideoStreamer(socket_route)
-face_trainer = FaceRecognitionTrainer(socket_route)
+#face_trainer = FaceRecognitionTrainer(socket_route)
 
 # threads principais
 
 # coloca o código de espera para receber fotos do servidor
-threading.Thread(target=face_trainer.execute).start()
+#threading.Thread(target=face_trainer.execute).start()
 threading.Thread(target=video_streamer.execute).start()
 
 while True:
