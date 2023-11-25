@@ -1,24 +1,23 @@
-import wifi
+from gtts import gTTS
+import pygame
+import time
 
-# scan for available WiFi networks
-wifi_scanner = wifi.Cell.all('wlan0')
-available_networks = [cell.ssid for cell in wifi_scanner]
+def emit_audio(audio):
+    language = 'pt'
+    myobj = gTTS(text=audio, lang=language, slow=False)
+    myobj.save("audios/audio.mp3")
 
-# print available networks
-print(f"Available Networks: {available_networks}")
+    time.sleep(0.5)
 
-# connect to a WiFi network
-network_ssid = "iPhone de Henrique"
-network_pass = "senhadohenrique"
+    pygame.mixer.init()
+    pygame.mixer.music.load('audios/audio.mp3')
+    pygame.mixer.music.set_volume(1)
+    pygame.mixer.music.play()
 
-for cell in wifi_scanner:
-	if cell.ssid == network_ssid:
-		b = 2
-		scheme = wifi.Scheme.for_cell('wlan0', cell.ssid, cell, network_pass)
-		scheme.save()
-		scheme.activate()
-		print(f"Coneccted to network: {network_ssid}")
-		break
-	
-else:
-	print(f"Unable to find network: {network_ssid}")
+    while pygame.mixer.music.get_busy() == True:
+        pass
+
+    time.sleep(0.5)
+
+emit_audio("echogate inicializada")
+emit_audio("trabalhando no treinamento da inteligencia artificial")
