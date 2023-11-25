@@ -12,8 +12,103 @@ from gtts import gTTS
 import pygame
 import time
 import imutils
+import socketserver
+import logging
+import io
+from threading import Condition
+from http import server
 
 MEET_URL="http://jitsi.member.fsf.org/echogate-streaming3#config.prejoinPageEnabled=false"
+
+PAGE="""\
+<html>
+<head>
+<title>OpenCV MJPEG Streaming</title>
+</head>
+<body>
+<img src="stream.mjpg" width="640" height="480" />
+</body>
+</html>
+"""
+
+class StreamingOutput(object):
+    def __init__(self):
+        self.frame = None
+        self.buffer = io.BytesIO()
+        self.condition = Condition()
+
+    def write(self, frame):
+        with self.condition:
+            self.frame = frame
+            self.condition.notify_all()
+        return self.buffer.write(frame.tobytes())
+
+
+class StreamingHandler(server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/':
+            self.send_response(301)
+            self.send_header('Location', '/index.html')
+            self.end_headers()
+        elif self.path == '/index.html':
+            content = PAGE.encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html')
+            self.send_header('Content-Length', len(content))
+            self.end_headers()
+            self.wfile.write(content)
+        elif self.path == '/stream.mjpg':
+            self.send_response(200)
+            self.send_header('Age', 0)
+            self.send_header('Cache-Control', 'no-cache, private')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=FRAME')
+            self.end_headers()
+            try:
+                while True:
+                    with VideoStreamer.output.condition:
+                        VideoStreamer.output.condition.wait()
+                        frame = VideoStreamer.output.frame
+                    self.wfile.write(b'--FRAME\r\n')
+                    self.send_header('Content-Type', 'image/jpeg')
+                    self.send_header('Content-Length', len(frame))
+                    self.end_headers()
+                    self.wfile.write(frame)
+                    self.wfile.write(b'\r\n')
+            except Exception as e:
+                logging.warning(
+                    'Removed streaming client %s: %s',
+                    self.client_address, str(e))
+        else:
+            self.send_error(404)
+            self.end_headers()
+
+
+class StreamingServer(socketserver.ThreadingMixIn, server.HTTPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+
+class VideoStreamer():
+    
+    output = StreamingOutput()
+
+    def __init__(self, route):
+        
+        # Inicializa o servidor
+        address = ('', 8000)
+        self.server = StreamingServer(address, StreamingHandler)
+
+        # Inicia o servidor
+        self.server.serve_forever()
+
+    def execute(self):
+        cap = cv2.VideoCapture(0)
+        cap.set(cv2.CAP_PROP_FPS, 15)
+        while True:
+            _, frame = cap.read()
+            _, jpeg = cv2.imencode('.jpg', frame)
+            VideoStreamer.output.write(jpeg)
 
 class AudioEmitter():
 
@@ -149,17 +244,7 @@ class BellNotifier():
             self.notified = False
 
         return False
-
-
-class VideoStreamer():
-    
-    def __init__(self, route):
-        pass
-
-    def execute(self):
-        subprocess.Popen(["chromium-browser", "-kiosk", MEET_URL])
-        while True:
-            pass
+        
 
 class FaceRecognitionTrainer():
 
@@ -224,13 +309,13 @@ face_trainer = FaceRecognitionTrainer(socket_route, face_recognizer)
 
 print("[INFO] Modules loaded.")
 audio_emitter.emit("Echogate inicializada")
-#video_streamer = VideoStreamer(socket_route)
+video_streamer = VideoStreamer(socket_route)
 
 # threads principais
 
 # coloca o código de espera para receber fotos do servidor
-threading.Thread(target=face_trainer.execute).start()
-#threading.Thread(target=video_streamer.execute).start()
+#threading.Thread(target=face_trainer.execute).start()
+threading.Thread(target=video_streamer.execute).start()
 #threading.Thread(target=face_recognizer.execute()).start()
 #threading.Thread(target=audio_emitter.execute()).start()
 
