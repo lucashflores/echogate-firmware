@@ -18,9 +18,10 @@ MEET_URL="http://jitsi.member.fsf.org/echogate-streaming3#config.prejoinPageEnab
 class AudioEmitter():
 
     def __init__(self, route):
-        self.audio_emiiter_socket = create_connection(route)
+        self.audio_emitter_socket = create_connection(route)
         print("[INFO] Audio emitter socket connected.")
-        self.audio_emiiter_socket.send(json.dumps({"event": "audioEmitterClient", "data": "Audio Emitter"}))
+        self.audio_emitter_socket.send(json.dumps({"event": "audioEmitterClient", "data": "Audio Emitter"}))
+        self.audio_emitter_socket.on_message = self.handle_message
 
     def emit(self, audio):
     
@@ -39,6 +40,14 @@ class AudioEmitter():
             pass
 
         time.sleep(0.5)
+
+    def handle_message(self, message):
+        self.emit(message)
+    
+    def execute(self):
+        while True:
+            result = self.audio_emitter_socket.recv()
+            self.handle_message(result)
 
 class FaceRecognizer():
 
@@ -69,10 +78,10 @@ class FaceRecognizer():
 
         while True:
 
-            if self.need_to_reload_binaries:
+            if self.need_to_reload_binaries():
                 self.load_binaries()
 
-            frame = cap.read()
+            ret, frame = cap.read()
             frame = imutils.resize(frame, width=500)
             # detecta o local das faces
             boxes = face_recognition.face_locations(frame)
@@ -105,14 +114,17 @@ class FaceRecognizer():
                 # atualiza a lista de nomes
                 names.append(name)
 
+            recognized = False
+
             for name in names:
                 if name != "Unknown":
                     print(f"[FACE RECOGNIZER] Recognized {name}, notifying server...")
                     self.audio_emitter.emit(f"Oi {name}, vou avisar que voc� chegou")
                     self.notify(name)
+                    recognized = True
 
-            time.sleep(10)
-
+            if recognized == True:
+                time.sleep(60)
 
 
 class BellNotifier():
@@ -169,7 +181,7 @@ class FaceRecognitionTrainer():
         f = open("encodings.pickle", "wb")
         f.write(pickle.dumps(data))
         f.close()
-        print("[FACE TRAINER] SCompleted successfully.")
+        print("[FACE TRAINER] Completed successfully.")
 
         self.face_recognizer.warn()
     
@@ -202,23 +214,24 @@ class FaceRecognitionTrainer():
             result = self.face_training_socket.recv()
             self.handle_message(result)
 
-socket_route = "ws://192.168.100.13:3000/websocket"
+socket_route = "ws://142.93.4.38:80/websocket"
 
 audio_emitter = AudioEmitter(socket_route)
 bell_notifier = BellNotifier(socket_route, audio_emitter)
 face_recognizer = FaceRecognizer(socket_route, audio_emitter)
+face_trainer = FaceRecognitionTrainer(socket_route, face_recognizer)
 
 print("[INFO] Modules loaded.")
 audio_emitter.emit("Echogate inicializada")
 #video_streamer = VideoStreamer(socket_route)
-face_trainer = FaceRecognitionTrainer(socket_route, face_recognizer)
 
 # threads principais
 
 # coloca o código de espera para receber fotos do servidor
-#threading.Thread(target=face_trainer.execute).start()
+threading.Thread(target=face_trainer.execute).start()
 #threading.Thread(target=video_streamer.execute).start()
-#threading.Thread(target=face_trainer.execute()).start()
+#threading.Thread(target=face_recognizer.execute()).start()
+#threading.Thread(target=audio_emitter.execute()).start()
 
 while True:
     #video_streamer.execute()
