@@ -6,6 +6,7 @@ import numpy as np
 import pickle
 import gpiozero
 import threading
+import socket
 from websocket import create_connection
 import subprocess
 from gtts import gTTS
@@ -30,6 +31,8 @@ PAGE="""\
 </body>
 </html>
 """
+
+lock = threading.Lock()
 
 class StreamingOutput(object):
     def __init__(self):
@@ -57,7 +60,7 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
             self.send_header('Content-Length', len(content))
             self.end_headers()
             self.wfile.write(content)
-        elif self.path == '/stream.mjpg':
+        elif self.path == '/stream.mjpg' or self.path == '/index.html/stream.mjpg':
             self.send_response(200)
             self.send_header('Age', 0)
             self.send_header('Cache-Control', 'no-cache, private')
@@ -95,28 +98,39 @@ class VideoStreamer():
 
     def __init__(self, route):
         
+        self.video_stream_socket = create_connection(route)
+        ip_address = socket.gethostbyname(socket.gethostname())
+        self.video_stream_socket.send(json.dumps({"event": "videoStreamIP", "data": str(ip_address)}))
+
         # Inicializa o servidor
         address = ('', 8000)
         self.server = StreamingServer(address, StreamingHandler)
 
         # Inicia o servidor
-        self.server.serve_forever()
+        threading.Thread(target=self.server.serve_forever).start()
 
     def execute(self):
-        cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(1)
         cap.set(cv2.CAP_PROP_FPS, 15)
+
         while True:
-            _, frame = cap.read()
-            _, jpeg = cv2.imencode('.jpg', frame)
-            VideoStreamer.output.write(jpeg)
+            try:
+                _, frame = cap.read()
+                _, jpeg = cv2.imencode('.jpg', frame)
+                VideoStreamer.output.write(jpeg)
+            except:
+                print("[INFO] Video stream socket lost connection.")
+                self.video_stream_socket = create_connection(self.route)
+                print("[INFO] Video stream socket connected.")
+
 
 class AudioEmitter():
 
     def __init__(self, route):
+        self.route = route
         self.audio_emitter_socket = create_connection(route)
         print("[INFO] Audio emitter socket connected.")
         self.audio_emitter_socket.send(json.dumps({"event": "audioEmitterClient", "data": "Audio Emitter"}))
-        self.audio_emitter_socket.on_message = self.handle_message
 
     def emit(self, audio):
     
@@ -140,13 +154,23 @@ class AudioEmitter():
         self.emit(message)
     
     def execute(self):
+
         while True:
-            result = self.audio_emitter_socket.recv()
-            self.handle_message(result)
+            try:
+                result = self.audio_emitter_socket.recv()
+                self.handle_message(result)
+            except:
+                print("[INFO] Audio emitter socket lost connection.")
+                self.audio_emitter_socket = create_connection(self.route)
+                self.audio_emitter_socket.send(json.dumps({"event": "audioEmitterClient", "data": "Audio Emitter"}))
+                print("[INFO] Audio emitter socket connected.")
+
+
 
 class FaceRecognizer():
 
     def __init__(self, route, audio_emitter):
+        self.route = route
         self.face_recognizer_socket = create_connection(route)
         print("[INFO] Face recognizer socket connected.")
         self.audio_emitter = audio_emitter
@@ -163,6 +187,7 @@ class FaceRecognizer():
         encodings_file_name = "encodings.pickle"
         print("[FACE RECOGNIZER] Loading encodings.")
         self.encodings = pickle.loads(open(encodings_file_name, "rb").read())
+        self.reload_binaries = False
     
     def notify(self, name):
         self.face_recognizer_socket.send(json.dumps({"event": "faceRecognized", "data": str(name)}))
@@ -173,58 +198,69 @@ class FaceRecognizer():
 
         while True:
 
-            if self.need_to_reload_binaries():
-                self.load_binaries()
+            try:
+                if self.need_to_reload_binaries():
+                    self.load_binaries()
 
-            ret, frame = cap.read()
-            frame = imutils.resize(frame, width=500)
-            # detecta o local das faces
-            boxes = face_recognition.face_locations(frame)
-            # detecta cada face na frame
-            find_encodings = face_recognition.face_encodings(frame, boxes)
-            names = []
-            # itera sobre as faces
-            for encoding in find_encodings:
-                # realiza a comparação de cada face detectada com as faces cadastradas
-                matches = face_recognition.compare_faces(self.encodings["encodings"], encoding)
-                name = "Unknown" # se a face não é reconhecida, printa "Unknown"
+                ret, frame = cap.read()
+                frame = imutils.resize(frame, width=500)
+                # detecta o local das faces
 
-                # checa se houve um match de face
-                if True in matches:
-                    # encontra o índice de todas as faces que deram match e inicializa
-                    # um dicionário para contar a quantidade de vezes que cada face deu match
-                    matchedIdxs = [i for (i, b) in enumerate(matches) if b]
-                    counts = {}
+                with lock:
 
-                    # itera sobre os índices de cada face que deu match e mantém a contagem
-                    # para cada face reconhecida
-                    for i in matchedIdxs:
-                        name = self.encodings["names"][i]
-                        counts[name] = counts.get(name, 0) + 1
+                    boxes = face_recognition.face_locations(frame)
+                    # detecta cada face na frame
+                    find_encodings = face_recognition.face_encodings(frame, boxes)
 
-                    # determina a face reconhecida com o maior número de votos
-                    # caso empate, é pego a primeira do dicionário
-                    name = max(counts, key=counts.get)
+                    names = []
+                    # itera sobre as faces
+                    for encoding in find_encodings:
+                        # realiza a comparação de cada face detectada com as faces cadastradas
+                        matches = face_recognition.compare_faces(self.encodings["encodings"], encoding)
+                        name = "Unknown" # se a face não é reconhecida, printa "Unknown"
 
-                # atualiza a lista de nomes
-                names.append(name)
+                        # checa se houve um match de face
+                        if True in matches:
+                            # encontra o índice de todas as faces que deram match e inicializa
+                            # um dicionário para contar a quantidade de vezes que cada face deu match
+                            matchedIdxs = [i for (i, b) in enumerate(matches) if b]
+                            counts = {}
 
-            recognized = False
+                            # itera sobre os índices de cada face que deu match e mantém a contagem
+                            # para cada face reconhecida
+                            for i in matchedIdxs:
+                                name = self.encodings["names"][i]
+                                counts[name] = counts.get(name, 0) + 1
 
-            for name in names:
-                if name != "Unknown":
-                    print(f"[FACE RECOGNIZER] Recognized {name}, notifying server...")
-                    self.audio_emitter.emit(f"Oi {name}, vou avisar que voc� chegou")
-                    self.notify(name)
-                    recognized = True
+                            # determina a face reconhecida com o maior número de votos
+                            # caso empate, é pego a primeira do dicionário
+                            name = max(counts, key=counts.get)
 
-            if recognized == True:
-                time.sleep(60)
+                        # atualiza a lista de nomes
+                        names.append(name)
+
+                    recognized = False
+
+                    for name in names:
+                        if name != "Unknown":
+                            print(f"[FACE RECOGNIZER] Recognized {name}, notifying server...")
+                            self.audio_emitter.emit(f"Oi {name}, vou avisar da sua chegada.")
+                            self.notify(name)
+                            recognized = True
+
+                if recognized == True:
+                    time.sleep(45)
+
+            except:
+                print("[INFO] Face recognizer socket lost connection.")
+                self.face_recognizer_socket = create_connection(self.route)
+                print("[INFO] Face recognizer socket reconnected.")
 
 
 class BellNotifier():
 
     def __init__(self, route, audio_emitter):
+        self.route = route
         self.bell_socket = create_connection(route)
         print("[INFO] Bell socket connected.")
         self.audio_emitter = audio_emitter
@@ -235,25 +271,29 @@ class BellNotifier():
         self.bell_socket.send(json.dumps({"event": "bellRing", "data": str("Alguém tocou a campainha")}))
 
     def execute(self):
-        if self.button.is_pressed:
-            if not self.notified:
-                self.notified = True
-                self.notify()
-                return True
-        else:
-            self.notified = False
-
-        return False
         
+        while True:
+            try:
+                if self.button.is_pressed:
+                    if not self.notified:
+                        self.notified = True
+                        self.notify()
+                else:
+                    self.notified = False
+            except:
+                print("[INFO] Bell socket lost connection.")
+                self.bell_socket = create_connection(self.route)
+                print("[INFO] Bell socket reconnected.") 
+
 
 class FaceRecognitionTrainer():
 
     def __init__(self, route, facial_recognizer):
+        self.route = route
         self.face_training_socket = create_connection(route)
         self.face_recognizer = facial_recognizer
         print("[INFO] Face recognizer trainer socket connected.")
         self.face_training_socket.send(json.dumps({"event": "imageTrainerClient", "data": "Facial Trainer"}))
-        self.face_training_socket.on_message = self.handle_message
 
     def process_base64_image(self, base64_string):
         binary_data = base64.b64decode(base64_string)
@@ -281,24 +321,44 @@ class FaceRecognitionTrainer():
 
         data = data["users"]
 
-        for person_data in data:
-            person_name = person_data["name"]
-            images_base64 = person_data["pictures"]
-            for image_base64 in images_base64:
-                image = self.process_base64_image(image_base64)
-                rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                boxes = face_recognition.face_locations(rgb, model="hog")
-                encodings = face_recognition.face_encodings(rgb, boxes)
-                for encoding in encodings:
-                    knownEncodings.append(encoding)
-                    knownNames.append(person_name)
+        try:
+            for person_data in data:
+                person_name = person_data["name"]
+                images_base64 = person_data["pictures"]
+                for image_base64 in images_base64:
+                    image = self.process_base64_image(image_base64)
 
-        self.write_face_data(knownEncodings, knownNames)
+                    cv2.imwrite('image.jpg', image)
+                    image = cv2.imread('image.jpg')
+                    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+                    boxes = face_recognition.face_locations(rgb,
+		                model="hog")
+                    
+                    encodings = face_recognition.face_encodings(rgb, boxes)
+                    
+                    for encoding in encodings:
+                        knownEncodings.append(encoding)
+                        knownNames.append(person_name)
+
+            self.write_face_data(knownEncodings, knownNames)
+        except Exception as error:
+            print("[ERRO]")
+            print(error)
 
     def execute(self):
+
         while True:
-            result = self.face_training_socket.recv()
-            self.handle_message(result)
+            try:
+                result = self.face_training_socket.recv()
+                with lock:
+                    self.handle_message(result)
+            except Exception as e:
+                print(e)
+                print("[INFO] Face recognizer trainer socket lost connection.")
+                self.face_training_socket = create_connection(self.route)
+                self.face_training_socket.send(json.dumps({"event": "imageTrainerClient", "data": "Facial Trainer"}))
+                print("[INFO] Face recognizer trainer socket reconnected.")
 
 socket_route = "ws://142.93.4.38:80/websocket"
 
@@ -313,14 +373,12 @@ video_streamer = VideoStreamer(socket_route)
 
 # threads principais
 
-# coloca o código de espera para receber fotos do servidor
-#threading.Thread(target=face_trainer.execute).start()
-threading.Thread(target=video_streamer.execute).start()
-#threading.Thread(target=face_recognizer.execute()).start()
-#threading.Thread(target=audio_emitter.execute()).start()
+threading.Thread(target=face_trainer.execute).start()
+#threading.Thread(target=video_streamer.execute).start()
+threading.Thread(target=face_recognizer.execute).start()
+#threading.Thread(target=audio_emitter.execute).start()
+#threading.Thread(target=bell_notifier.execute).start()
 
 while True:
-    #video_streamer.execute()
-    #bell_notifier.execute()
     pass
    

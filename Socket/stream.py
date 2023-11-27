@@ -12,7 +12,7 @@ PAGE="""\
 <title>OpenCV MJPEG Streaming</title>
 </head>
 <body>
-<img src="stream.mjpg" width="640" height="480" />
+<img src="stream.mjpg" width="640" height="680" />
 </body>
 </html>
 """
@@ -42,7 +42,7 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
             self.send_header('Content-Length', len(content))
             self.end_headers()
             self.wfile.write(content)
-        elif self.path == '/stream.mjpg':
+        elif self.path == '/stream.mjpg' or self.path == '/index.html/stream.mjpg':
             self.send_response(200)
             self.send_header('Age', 0)
             self.send_header('Cache-Control', 'no-cache, private')
@@ -77,7 +77,7 @@ output = StreamingOutput()
 
 # Fun��o para capturar frames da c�mera usando OpenCV
 def generate():
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(1)
     cap.set(cv2.CAP_PROP_FPS, 15)
     while True:
         _, frame = cap.read()

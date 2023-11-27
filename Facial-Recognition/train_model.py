@@ -7,7 +7,7 @@ import os
 
 # our images are located in the dataset folder
 print("[INFO] start processing faces...")
-imagePaths = list(paths.list_images("dataset"))
+imagePaths = list(paths.list_images("Facial-Recognition/dataset"))
 
 # initialize the list of known encodings and known names
 knownEncodings = []

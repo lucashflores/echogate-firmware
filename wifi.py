@@ -1,23 +1,17 @@
-from gtts import gTTS
-import pygame
-import time
+import speech_recognition
 
-def emit_audio(audio):
-    language = 'pt'
-    myobj = gTTS(text=audio, lang=language, slow=False)
-    myobj.save("audios/audio.mp3")
+recognizer = speech_recognition.Recognizer()
 
-    time.sleep(0.5)
+while True:
 
-    pygame.mixer.init()
-    pygame.mixer.music.load('audios/audio.mp3')
-    pygame.mixer.music.set_volume(1)
-    pygame.mixer.music.play()
+    try:
+        with speech_recognition.Microphone(1) as mic:
+            recognizer.adjust_for_ambient_noise(mic, duration=0.2)
+            audio = recognizer.listen(mic)
+            text = recognizer.recognize_google(audio_data=audio, language="pt-BR")
+            text = text.lower()
+            print(f"Recognized: {text}")
 
-    while pygame.mixer.music.get_busy() == True:
-        pass
-
-    time.sleep(0.5)
-
-emit_audio("echogate inicializada")
-emit_audio("trabalhando no treinamento da inteligencia artificial")
+    except:
+        recognizer = speech_recognition.Recognizer()
+        continue
