@@ -16,6 +16,7 @@ import imutils
 import socketserver
 import logging
 import io
+import speech_recognition
 import sounddevice
 from threading import Condition
 from http import server
@@ -134,6 +135,45 @@ class AudioStreamer():
         subprocess.Popen(["chromium-browser", "-kiosk", MEET_URL])
         while True:
             pass
+
+
+class AudioTranscriber():
+
+    def __init__(self, route):
+        self.route = route
+        self.audio_transcriber_socket = create_connection(route)
+        print("[INFO] Audio transcriber socket connected.")
+
+    def send(self, text):
+        self.audio_transcriber_socket.send(json.dumps({"event": "audioTranscription", "data": str(text)}))
+        print(f"[AUDIO TRANSCRIBER] Transcription sent.")
+
+    def recognize(self):
+        
+        recognizer = speech_recognition.Recognizer()
+
+        try:
+            with speech_recognition.Microphone(11) as mic:
+                recognizer.adjust_for_ambient_noise(mic, duration=0.2)
+                audio = recognizer.listen(mic)
+                text = recognizer.recognize_google(audio_data=audio, language="pt-BR")
+                text = text.lower()
+                print(f"[AUDIO TRANSCRIBER] Recognized -> {text}")
+
+        except:
+            pass
+
+    def execute(self):
+        while True:
+            try:
+                recognized_text = self.recognize()
+                self.send(recognized_text)
+            except:
+                print("[INFO] Audio transcriber socket lost connection.")
+                self.audio_transcriber_socket = create_connection(self.route)
+                print("[INFO] Audio transcriber reconnected.")
+
+
 
 class AudioEmitter():
 
