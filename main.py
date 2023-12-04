@@ -16,10 +16,11 @@ import imutils
 import socketserver
 import logging
 import io
+import sounddevice
 from threading import Condition
 from http import server
 
-MEET_URL="http://jitsi.member.fsf.org/echogate-streaming3#config.prejoinPageEnabled=false"
+MEET_URL="https://meet.mayfirst.org/echogate-streaming#config.prejoinPageEnabled=false"
 
 PAGE="""\
 <html>
@@ -124,6 +125,16 @@ class VideoStreamer():
                 print("[INFO] Video stream socket connected.")
 
 
+class AudioStreamer():
+
+    def __init__(self):
+        pass
+
+    def execute(self):
+        subprocess.Popen(["chromium-browser", "-kiosk", MEET_URL])
+        while True:
+            pass
+
 class AudioEmitter():
 
     def __init__(self, route):
@@ -149,6 +160,18 @@ class AudioEmitter():
             pass
 
         time.sleep(0.5)
+
+    def emit_doorbell_sound(self):
+        pygame.mixer.init()
+        pygame.mixer.music.load('audios/doorbell.wav')
+        pygame.mixer.music.set_volume(1)
+        pygame.mixer.music.play()
+
+        while pygame.mixer.music.get_busy() == True:
+            pass
+
+        time.sleep(0.5)
+
 
     def handle_message(self, message):
         self.emit(message)
@@ -191,6 +214,7 @@ class FaceRecognizer():
     
     def notify(self, name):
         self.face_recognizer_socket.send(json.dumps({"event": "faceRecognized", "data": str(name)}))
+        print("[FACE RECOGNIZER] Notification sent.")
 
     def execute(self):
         
@@ -278,6 +302,7 @@ class BellNotifier():
                     if not self.notified:
                         self.notified = True
                         self.notify()
+                        self.audio_emitter.emit_doorbell_sound()
                 else:
                     self.notified = False
             except:
@@ -321,30 +346,27 @@ class FaceRecognitionTrainer():
 
         data = data["users"]
 
-        try:
-            for person_data in data:
-                person_name = person_data["name"]
-                images_base64 = person_data["pictures"]
-                for image_base64 in images_base64:
-                    image = self.process_base64_image(image_base64)
+        for person_data in data:
+            person_name = person_data["name"]
+            images_base64 = person_data["pictures"]
+            for image_base64 in images_base64:
+                image = self.process_base64_image(image_base64)
 
-                    cv2.imwrite('image.jpg', image)
-                    image = cv2.imread('image.jpg')
-                    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                cv2.imwrite('image.jpg', image)
+                image = cv2.imread('image.jpg')
+                rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-                    boxes = face_recognition.face_locations(rgb,
-		                model="hog")
-                    
-                    encodings = face_recognition.face_encodings(rgb, boxes)
-                    
-                    for encoding in encodings:
-                        knownEncodings.append(encoding)
-                        knownNames.append(person_name)
+                boxes = face_recognition.face_locations(rgb,
+                    model="hog")
+                        
+                encodings = face_recognition.face_encodings(rgb, boxes)
+                        
+                for encoding in encodings:
+                    knownEncodings.append(encoding)
+                    knownNames.append(person_name)
 
-            self.write_face_data(knownEncodings, knownNames)
-        except Exception as error:
-            print("[ERRO]")
-            print(error)
+        self.write_face_data(knownEncodings, knownNames)
+        
 
     def execute(self):
 
@@ -366,18 +388,21 @@ audio_emitter = AudioEmitter(socket_route)
 bell_notifier = BellNotifier(socket_route, audio_emitter)
 face_recognizer = FaceRecognizer(socket_route, audio_emitter)
 face_trainer = FaceRecognitionTrainer(socket_route, face_recognizer)
+video_streamer = VideoStreamer(socket_route)
+audio_streamer = AudioStreamer()
 
 print("[INFO] Modules loaded.")
 audio_emitter.emit("Echogate inicializada")
-video_streamer = VideoStreamer(socket_route)
+
 
 # threads principais
 
 threading.Thread(target=face_trainer.execute).start()
-#threading.Thread(target=video_streamer.execute).start()
+threading.Thread(target=audio_streamer.execute).start()
+threading.Thread(target=video_streamer.execute).start()
 threading.Thread(target=face_recognizer.execute).start()
-#threading.Thread(target=audio_emitter.execute).start()
-#threading.Thread(target=bell_notifier.execute).start()
+threading.Thread(target=audio_emitter.execute).start()
+threading.Thread(target=bell_notifier.execute).start()
 
 while True:
     pass
