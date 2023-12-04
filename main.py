@@ -429,6 +429,7 @@ bell_notifier = BellNotifier(socket_route, audio_emitter)
 face_recognizer = FaceRecognizer(socket_route, audio_emitter)
 face_trainer = FaceRecognitionTrainer(socket_route, face_recognizer)
 video_streamer = VideoStreamer(socket_route)
+audio_transcriber = AudioTranscriber(socket_route)
 audio_streamer = AudioStreamer()
 
 print("[INFO] Modules loaded.")
@@ -443,6 +444,7 @@ threading.Thread(target=video_streamer.execute).start()
 threading.Thread(target=face_recognizer.execute).start()
 threading.Thread(target=audio_emitter.execute).start()
 threading.Thread(target=bell_notifier.execute).start()
+threading.Thread(target=audio_transcriber.execute).start()
 
 while True:
     pass
